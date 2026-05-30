@@ -3,8 +3,8 @@ package pbo.f01.model;
 import javax.persistence.*;
 
 @Entity
-@Table(name = "vehicles")
-public class Vehicle implements Comparable<Vehicle> {
+@Table(name = "vehicle")
+public class Vehicle {
 
     @Id
     @Column(name = "plate_number", nullable = false, unique = true)
@@ -17,7 +17,7 @@ public class Vehicle implements Comparable<Vehicle> {
     private String type;
 
     @ManyToOne
-    @JoinColumn(name = "parking_area_name")
+    @JoinColumn(name = "parking_area_name", referencedColumnName = "name")
     private ParkingArea parkingArea;
 
     public Vehicle() {}
@@ -27,7 +27,7 @@ public class Vehicle implements Comparable<Vehicle> {
         this.owner = owner;
         this.type = type;
     }
-    
+
     public String getPlateNumber() { return plateNumber; }
     public void setPlateNumber(String plateNumber) { this.plateNumber = plateNumber; }
 
@@ -39,14 +39,4 @@ public class Vehicle implements Comparable<Vehicle> {
 
     public ParkingArea getParkingArea() { return parkingArea; }
     public void setParkingArea(ParkingArea parkingArea) { this.parkingArea = parkingArea; }
-
-    @Override
-    public int compareTo(Vehicle o) {
-        return this.plateNumber.compareTo(o.plateNumber);
-    }
-
-    @Override
-    public String toString() {
-        return this.plateNumber + " " + this.owner + " " + this.type;
-    }
 }

@@ -1,13 +1,13 @@
 package pbo.f01.model;
+
 import javax.persistence.*;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 @Entity
-@Table(name = "parking_areas")
-public class ParkingArea implements Comparable<ParkingArea> {
-    
+@Table(name = "parking_area")
+public class ParkingArea {
+
     @Id
     @Column(name = "name", nullable = false, unique = true)
     private String name;
@@ -18,8 +18,8 @@ public class ParkingArea implements Comparable<ParkingArea> {
     @Column(name = "allowed_type", nullable = false)
     private String allowedType;
 
-    // Relasi One-to-Many ke Vehicle
-    @OneToMany(mappedBy = "parkingArea", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "parkingArea", fetch = FetchType.LAZY)
+    @OrderBy("plateNumber ASC")
     private List<Vehicle> vehicles = new ArrayList<>();
 
     public ParkingArea() {}
@@ -42,28 +42,5 @@ public class ParkingArea implements Comparable<ParkingArea> {
     public List<Vehicle> getVehicles() { return vehicles; }
     public void setVehicles(List<Vehicle> vehicles) { this.vehicles = vehicles; }
 
-    public boolean canPark(Vehicle vehicle) {
-        if (!this.allowedType.equalsIgnoreCase(vehicle.getType())) {
-            return false;
-        }
-        if (this.vehicles.size() >= this.capacity) {
-            return false;
-        }
-        return true;
-    }
-
-    public void addVehicle(Vehicle vehicle) {
-        this.vehicles.add(vehicle);
-        vehicle.setParkingArea(this);
-    }
-
-    @Override
-    public int compareTo(ParkingArea o) {
-        return this.name.compareTo(o.name);
-    }
-
-    @Override
-    public String toString() {
-        return this.name + " " + this.allowedType + " " + this.capacity + "|" + this.vehicles.size();
-    }
+    public int getOccupied() { return vehicles.size(); }
 }

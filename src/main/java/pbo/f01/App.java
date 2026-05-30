@@ -1,121 +1,152 @@
 package pbo.f01;
+
 import pbo.f01.model.ParkingArea;
 import pbo.f01.model.Vehicle;
-import javax.persistence.EntityManager;
-import javax.persistence.EntityManagerFactory;
-import javax.persistence.Persistence;
-import java.util.Collections;
-import java.util.List;
-import java.util.Scanner;
 
-/**
- * Driver class utama
- * Nama: [Geralda Natali Gultom]
- * Nim: [12S24051]
- */
+import javax.persistence.*;
+import java.util.*;
 
 public class App {
 
-    static {
-        System.setProperty("org.jboss.logging.provider", "jdk");
-        java.util.logging.Logger.getLogger("org.hibernate").setLevel(java.util.logging.Level.SEVERE);
-    }
-
-    private static EntityManagerFactory emf = Persistence.createEntityManagerFactory("pbo-f01-pu");
+    private static EntityManagerFactory emf;
+    private static EntityManager em;
 
     public static void main(String[] args) {
+        emf = Persistence.createEntityManagerFactory("park-it-pu");
+        em = emf.createEntityManager();
 
-        
-        java.util.logging.Logger.getLogger("org.hibernate").setLevel(java.util.logging.Level.SEVERE);
-        EntityManager em = emf.createEntityManager();
         Scanner scanner = new Scanner(System.in);
 
         while (scanner.hasNextLine()) {
-            String input = scanner.nextLine().trim();
-            if (input.isEmpty()) continue;
+            String line = scanner.nextLine().trim();
+            if (line.isEmpty()) continue;
 
-            String[] tokens = input.split("#");
-            String command = tokens[0];
+            String[] parts = line.split("#");
+            String command = parts[0];
 
             switch (command) {
                 case "area-add":
-                    if (tokens.length == 4) {
-                        String name = tokens[1];
-                        int capacity = Integer.parseInt(tokens[2]);
-                        String allowedType = tokens[3];
-
-                        em.getTransaction().begin();
-                        ParkingArea area = em.find(ParkingArea.class, name);
-                        if (area == null) {
-                            area = new ParkingArea(name, capacity, allowedType);
-                            em.persist(area);
-                        }
-                        em.getTransaction().commit();
-                    }
+                    handleAreaAdd(parts);
                     break;
-
                 case "vehicle-add":
-                    if (tokens.length == 4) {
-                        String plateNumber = tokens[1];
-                        String owner = tokens[2];
-                        String type = tokens[3];
-
-                        em.getTransaction().begin();
-                        Vehicle vehicle = em.find(Vehicle.class, plateNumber);
-                        if (vehicle == null) {
-                            vehicle = new Vehicle(plateNumber, owner, type);
-                            em.persist(vehicle);
-                        }
-                        em.getTransaction().commit();
-                    }
+                    handleVehicleAdd(parts);
                     break;
-
                 case "park":
-                    if (tokens.length == 3) {
-                        String plateNumber = tokens[1];
-                        String areaName = tokens[2];
-
-                        em.getTransaction().begin();
-                        Vehicle vehicle = em.find(Vehicle.class, plateNumber);
-                        ParkingArea area = em.find(ParkingArea.class, areaName);
-
-                        if (vehicle != null && area != null && area.canPark(vehicle)) {
-                            area.addVehicle(vehicle);
-                            em.merge(area);
-                        }
-                        em.getTransaction().commit();
-                    }
+                    handlePark(parts);
                     break;
-
                 case "display-all":
-                    List<ParkingArea> areas = em.createQuery("SELECT a FROM ParkingArea a", ParkingArea.class)
-                                                .getResultList();
-                    
-                    Collections.sort(areas);
-
-                    for (ParkingArea area : areas) {
-                        System.out.println(area.toString());
-                        
-                        List<Vehicle> parkedVehicles = area.getVehicles();
-                        Collections.sort(parkedVehicles);
-
-                        for (Vehicle vehicle : parkedVehicles) {
-                            System.out.println(vehicle.toString());
-                        }
-                    }
-
-                    em.close();
-                    emf.close();
-                    scanner.close();
-                    return;
-
+                    handleDisplayAll();
+                    break;
                 default:
+                    // unknown command, ignore
                     break;
             }
         }
 
-        if (em.isOpen()) em.close();
-        if (emf.isOpen()) emf.close();
         scanner.close();
+        em.close();
+        emf.close();
+    }
+
+    // area-add#<name>#<capacity>#<allowed_type>
+    private static void handleAreaAdd(String[] parts) {
+        if (parts.length < 4) return;
+        String name = parts[1];
+        int capacity;
+        try {
+            capacity = Integer.parseInt(parts[2]);
+        } catch (NumberFormatException e) {
+            return;
+        }
+        String allowedType = parts[3];
+
+        // Check if area already exists
+        ParkingArea existing = em.find(ParkingArea.class, name);
+        if (existing != null) return;
+
+        EntityTransaction tx = em.getTransaction();
+        tx.begin();
+        ParkingArea area = new ParkingArea(name, capacity, allowedType);
+        em.persist(area);
+        tx.commit();
+    }
+
+    // vehicle-add#<plate_number>#<owner>#<type>
+    private static void handleVehicleAdd(String[] parts) {
+        if (parts.length < 4) return;
+        String plateNumber = parts[1];
+        String owner = parts[2];
+        String type = parts[3];
+
+        // Check if vehicle already exists
+        Vehicle existing = em.find(Vehicle.class, plateNumber);
+        if (existing != null) return;
+
+        EntityTransaction tx = em.getTransaction();
+        tx.begin();
+        Vehicle vehicle = new Vehicle(plateNumber, owner, type);
+        em.persist(vehicle);
+        tx.commit();
+    }
+
+    // park#<plate_number>#<area_name>
+    private static void handlePark(String[] parts) {
+        if (parts.length < 3) return;
+        String plateNumber = parts[1];
+        String areaName = parts[2];
+
+        Vehicle vehicle = em.find(Vehicle.class, plateNumber);
+        if (vehicle == null) return; // vehicle not registered
+
+        ParkingArea area = em.find(ParkingArea.class, areaName);
+        if (area == null) return; // area not found
+
+        // Validate type match
+        if (!vehicle.getType().equalsIgnoreCase(area.getAllowedType())) return;
+
+        // Refresh area to get current occupancy count
+        em.refresh(area);
+
+        // Validate capacity
+        long occupied = countVehiclesInArea(areaName);
+        if (occupied >= area.getCapacity()) return;
+
+        EntityTransaction tx = em.getTransaction();
+        tx.begin();
+        vehicle = em.find(Vehicle.class, plateNumber);
+        area = em.find(ParkingArea.class, areaName);
+        vehicle.setParkingArea(area);
+        em.merge(vehicle);
+        tx.commit();
+    }
+
+    private static long countVehiclesInArea(String areaName) {
+        TypedQuery<Long> q = em.createQuery(
+            "SELECT COUNT(v) FROM Vehicle v WHERE v.parkingArea.name = :areaName", Long.class);
+        q.setParameter("areaName", areaName);
+        return q.getSingleResult();
+    }
+
+    // display-all: areas sorted by name ASC, then vehicles in each area sorted by plate ASC
+    private static void handleDisplayAll() {
+        TypedQuery<ParkingArea> areaQuery = em.createQuery(
+            "SELECT a FROM ParkingArea a ORDER BY a.name ASC", ParkingArea.class);
+        List<ParkingArea> areas = areaQuery.getResultList();
+
+        for (ParkingArea area : areas) {
+            long occupied = countVehiclesInArea(area.getName());
+            System.out.println(area.getName() + " " + area.getAllowedType()
+                + " " + area.getCapacity() + "|" + occupied);
+
+            TypedQuery<Vehicle> vehicleQuery = em.createQuery(
+                "SELECT v FROM Vehicle v WHERE v.parkingArea.name = :areaName ORDER BY v.plateNumber ASC",
+                Vehicle.class);
+            vehicleQuery.setParameter("areaName", area.getName());
+            List<Vehicle> vehicles = vehicleQuery.getResultList();
+
+            for (Vehicle v : vehicles) {
+                System.out.println(v.getPlateNumber() + " " + v.getOwner() + " " + v.getType());
+            }
+        }
     }
 }
